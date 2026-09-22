@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#4a7ddb">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Andy's Grocery List</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #1a1a1a; }
+.app { max-width: 600px; margin: 0 auto; padding: 1rem; }
+.tab-row { display: flex; border-bottom: 1px solid #ddd; margin-bottom: 1.25rem; background: #fff; border-radius: 12px 12px 0 0; padding: 0 1rem; overflow-x: auto; }
+.tab { padding: 12px 14px; font-size: 14px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tab.active { color: #1a1a1a; border-bottom-color: #1a1a1a; font-weight: 500; }
+.category-block { margin-bottom: 1.25rem; }
+.category-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 8px; padding-left: 2px; }
+.meal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.meal-btn { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 12px; font-size: 14px; color: #1a1a1a; cursor: pointer; text-align: left; display: flex; align-items: center; gap: 8px; min-height: 50px; }
+.meal-btn.selected { background: #e8f0fe; border-color: #4a7ddb; color: #1a4ab5; }
+.check { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; min-width: 16px; border: 1.5px solid currentColor; border-radius: 3px; font-size: 11px; }
+.meal-btn.selected .check::after { content: '✓'; }
+.actions { display: flex; gap: 8px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.btn { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 12px 16px; font-size: 14px; color: #1a1a1a; cursor: pointer; flex: 1; text-align: center; min-width: 100px; }
+.btn-primary { background: #e8f0fe; border-color: #4a7ddb; color: #1a4ab5; font-weight: 500; }
+.btn-copy.copied { background: #e6f9ed; border-color: #3a9e5f; color: #2a7a48; }
+.list-section { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 0.875rem 1rem; margin-bottom: 0.875rem; }
+.store-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
+.grocery-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f5f5f5; cursor: pointer; }
+.grocery-item:last-child { border-bottom: none; }
+.grocery-item input[type=checkbox] { width: 20px; height: 20px; min-width: 20px; cursor: pointer; accent-color: #4a7ddb; }
+.item-text { flex: 1; line-height: 1.4; }
+.item-name { font-size: 15px; color: #1a1a1a; display: block; }
+.item-meals { font-size: 12px; color: #999; display: block; margin-top: 1px; }
+.qty-badge { font-size: 12px; font-weight: 600; color: #fff; background: #4a7ddb; border-radius: 12px; padding: 2px 8px; flex-shrink: 0; min-width: 24px; text-align: center; }
+.always-badge { font-size: 11px; color: #888; background: #f5f5f5; border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+.progress { font-size: 13px; color: #888; margin-bottom: 0.875rem; }
+.empty-state { color: #888; font-size: 14px; background: #fff; border-radius: 12px; padding: 1.5rem; text-align: center; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="tab-row">
+    <div class="tab active" onclick="showTab('meals')">Select meals</div>
+    <div class="tab" onclick="showTab('list')">Shopping list</div>
+  </div>
+  <div id="tab-meals">
+    <div id="meal-categories"></div>
+    <div class="actions">
+      <button class="btn btn-primary" onclick="showTab('list')">Generate list ↗</button>
+      <button class="btn btn-copy" id="copy-btn" onclick="copyMeals()">Copy meals</button>
+      <button class="btn" onclick="clearMeals()">Clear all</button>
+    </div>
+  </div>
+  <div id="tab-list" style="display:none">
+    <div id="list-content"></div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = [
+  { label: "🥦 Meatless", meals: ["Almond Butter & Jam","Bean & Cheese Burritos","Egg Foo Young","Fried Rice","Protein Smoothie"] },
+  { label: "🍗 Chicken", meals: ["Buffalo Chicken Wraps","Buffalo Meatball Sub","Chicken & Potatoes","Chicken Caesar Wrap","Chicken Nachos","Chicken Quesadillas","Chicken Tacos","Hotdogs","Pepperoni Sub","Rice & Meatballs","Sausage & Peppers","TJ Meatballs"] },
+  { label: "🥩 Beef", meals: ["Baked Ziti","Beef & Broccoli","Beef Tacos","Chili Cheese Fries","Ground Beef Mac & Cheese","Lasagna","Pasta"] },
+  { label: "🗂️ Misc", meals: ["Corn Dogs","Fried Rice + Sausage","Mexican Rice","Pizza","Sandwich"] }
+];
+
+const RECIPES = {
+  "Almond Butter & Jam": {
+    "Costco": [{name:"Kirkland organic almond butter",qty:32,unit:"g"},{name:"Kirkland organic strawberry spread",qty:54,unit:"g"}],
+    "Aisle": [{name:"Milton's Hearty Whole Grain bread",qty:2,unit:"slices"}]
+  },
+  "Baked Ziti": {
+    "Veggies/Meat": [{name:"96% lean ground beef",qty:1.5,unit:"lb"},{name:"Yellow onion",qty:1,unit:""}],
+    "Aisle": [{name:"Ziti pasta",qty:1,unit:"lb"},{name:"Tomato paste",qty:1,unit:"tbsp"},{name:"Red lentils (dry)",qty:1,unit:"cup"},{name:"Vegetable broth",qty:1,unit:"can"},{name:"Olive oil",qty:1,unit:"tbsp"}],
+    "Trader Joe's": [{name:"Rao's marinara",qty:1,unit:"jar"}],
+    "Dairy": [{name:"Low fat cottage cheese",qty:1,unit:"cup"},{name:"Part skim ricotta",qty:1,unit:"cup"},{name:"Mozzarella",qty:1,unit:"cup"},{name:"Parmesan",qty:1,unit:"cup"}]
+  },
+  "Bean & Cheese Burritos": {
+    "Aisle": [{name:"Fat free refried beans",qty:2,unit:"cans"},{name:"Large flour tortillas",qty:6,unit:""},{name:"Smoked paprika",qty:1,unit:"tsp"}],
+    "Veggies/Meat": [{name:"Yellow onion",qty:0.5,unit:""},{name:"Green pepper",qty:0.5,unit:""},{name:"Garlic",qty:2,unit:"cloves"}],
+    "Dairy": [{name:"Lucerne RF colby jack",qty:2,unit:"cups"}],
+    "Costco": [{name:"Olive oil",qty:2,unit:"tbsp"}]
+  },
+  "Beef & Broccoli": {
+    "Veggies/Meat": [{name:"Flank steak",qty:1,unit:"lb"},{name:"Fresh broccoli",qty:4,unit:"cups"},{name:"Fresh ginger",qty:1,unit:"tsp"},{name:"Garlic",qty:3,unit:"cloves"}],
+    "Aisle": [{name:"Low-sodium soy sauce",qty:0.33,unit:"cup"},{name:"Brown sugar",qty:3,unit:"tbsp"},{name:"Cornstarch",qty:1.5,unit:"tbsp"},{name:"Sesame oil",qty:1,unit:"tbsp"},{name:"White rice",qty:1,unit:""}],
+    "Costco": [{name:"Avocado oil",qty:2,unit:"tbsp"}]
+  },
+  "Beef Tacos": {
+    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:1,unit:""},{name:"Romaine lettuce",qty:1,unit:"cup"}],
+    "Aisle": [{name:"Taco shells",qty:1,unit:"box"}],
+    "Dairy": [{name:"General cheese",qty:1,unit:"cup"}]
+  },
+  "Buffalo Chicken Wraps": {
+    "Costco": [{name:"Kirkland lightly breaded chicken chunks",qty:1,unit:"bag"}],
+    "Aisle": [{name:"Mission Carb Balance large flour tortillas",qty:1,unit:"pkg"},{name:"Sweet Baby Ray's buffalo sauce",qty:1,unit:"bottle"},{name:"Ken's Steakhouse Lite Ranch",qty:1,unit:"bottle"}],
+    "Veggies/Meat": [{name:"Romaine lettuce",qty:1,unit:"head"},{name:"Tomato",qty:1,unit:""},{name:"Red onion",qty:1,unit:""}],
+    "Dairy": [{name:"Mozzarella",qty:1,unit:"cup"}]
+  },
+  "Buffalo Meatball Sub": {
+    "Trader Joe's": [{name:"Trader Joe's meatballs",qty:1,unit:"bag"}],
+    "Aisle": [{name:"Sweet Baby Ray's buffalo sauce",qty:1,unit:"bottle"},{name:"Sandwich bread",qty:1,unit:"loaf"}],
+    "Dairy": [{name:"General cheese",qty:1,unit:"cup"}]
+  },
+  "Chicken & Potatoes": {
+    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
+    "Veggies/Meat": [{name:"Russet potatoes",qty:3,unit:""},{name:"Fresh broccoli",qty:1,unit:"head"},{name:"Carrots",qty:1,unit:"bag"}]
+  },
+  "Chicken Caesar Wrap": {
+    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
+    "Veggies/Meat": [{name:"Romaine lettuce",qty:1,unit:"head"},{name:"Tomato",qty:1,unit:""}],
+    "Aisle": [{name:"Caesar dressing",qty:1,unit:"bottle"},{name:"Croutons",qty:1,unit:"bag"},{name:"Large flour tortillas",qty:1,unit:"pkg"}]
+  },
+  "Chicken Nachos": {
+    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
+    "Aisle": [{name:"Corn tortillas",qty:1,unit:"pkg"},{name:"Canned beans",qty:1,unit:"can"}],
+    "Veggies/Meat": [{name:"Tomato",qty:2,unit:""},{name:"Yellow onion",qty:1,unit:""}],
+    "Dairy": [{name:"General cheese",qty:2,unit:"cups"}]
+  },
+  "Chicken Quesadillas": {
+    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
+    "Veggies/Meat": [{name:"Red pepper",qty:1,unit:""},{name:"Green pepper",qty:1,unit:""}],
+    "Aisle": [{name:"Large flour tortillas",qty:1,unit:"pkg"}],
+    "Dairy": [{name:"Lucerne RF colby jack",qty:1,unit:"cup"}]
+  },
+  "Chicken Tacos": {
+    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
+    "Aisle": [{name:"Taco shells",qty:1,unit:"box"}],
+    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""},{name:"Romaine lettuce",qty:1,unit:"head"}],
+    "Dairy": [{name:"General cheese",qty:1,unit:"cup"}]
+  },
+  "Chili Cheese Fries": {
+    "Veggies/Meat": [{name:"96% lean ground beef",qty:2,unit:"lb"},{name:"Russet potatoes",qty:3,unit:""},{name:"Yellow onion",qty:1,unit:""}],
+    "Aisle": [{name:"Chili packet",qty:1,unit:"pkg"},{name:"Tomato sauce",qty:1,unit:"can"}],
+    "Dairy": [{name:"General cheese",qty:2,unit:"cups"}]
+  },
+  "Corn Dogs": {
+    "Costco": [{name:"Foster Farms Jumbo corn dogs",qty:1,unit:"box"}]
+  },
+  "Egg Foo Young": {
+    "Costco": [{name:"Kirkland egg whites",qty:16,unit:"oz"},{name:"Frozen broccoli",qty:0.5,unit:"lb"}],
+    "Dairy": [{name:"Eggs",qty:7,unit:""}],
+    "Aisle": [{name:"Sesame oil",qty:34,unit:"g"}],
+    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""},{name:"Green pepper",qty:1,unit:""},{name:"Red pepper",qty:1,unit:""}]
+  },
+  "Fried Rice": {
+    "Aisle": [{name:"White rice",qty:1,unit:"cup dry"},{name:"Low-sodium soy sauce",qty:3,unit:"tbsp"},{name:"Sesame oil",qty:1,unit:"tbsp"}],
+    "Costco": [{name:"Frozen mixed vegetables",qty:2,unit:"cups"},{name:"Kirkland egg whites",qty:1,unit:"cup"},{name:"Avocado oil",qty:3,unit:"tbsp"}],
+    "Dairy": [{name:"Eggs",qty:3,unit:""}],
+    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""}]
+  },
+  "Fried Rice + Sausage": {
+    "Aisle": [{name:"White rice",qty:1,unit:"cup dry"},{name:"Low-sodium soy sauce",qty:3,unit:"tbsp"},{name:"Sesame oil",qty:1,unit:"tbsp"}],
+    "Costco": [{name:"Frozen mixed vegetables",qty:2,unit:"cups"},{name:"Kirkland egg whites",qty:1,unit:"cup"},{name:"Avocado oil",qty:3,unit:"tbsp"},{name:"Kam Yen Jan Chinese sausage",qty:5,unit:"links"}],
+    "Dairy": [{name:"Eggs",qty:3,unit:""}],
+    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""}]
+  },
+  "Ground Beef Mac & Cheese": {
+    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:1,unit:""},{name:"Tomato",qty:1,unit:""}],
+    "Aisle": [{name:"Barilla whole wheat rotini",qty:1,unit:"lb"},{name:"Tomato paste",qty:1,unit:"tbsp"}],
+    "Dairy": [{name:"Low fat cottage cheese",qty:1,unit:"cup"},{name:"Lucerne RF colby jack",qty:1,unit:"cup"},{name:"1% milk",qty:0.5,unit:"cup"}]
+  },
+  "Hotdogs": {
+    "Veggies/Meat": [{name:"Chicken sausage",qty:1,unit:"pkg"}],
+    "Aisle": [{name:"Hotdog buns",qty:1,unit:"pkg"}]
+  },
+  "Lasagna": {
+    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:0.75,unit:"cup"},{name:"Garlic",qty:3,unit:"cloves"},{name:"Fresh parsley",qty:0.25,unit:"cup"}],
+    "Aisle": [{name:"Lasagna noodles",qty:9,unit:""},{name:"Olive oil",qty:1,unit:"tbsp"},{name:"Italian seasoning",qty:1,unit:"tsp"}],
+    "Trader Joe's": [{name:"Rao's marinara",qty:1.5,unit:"jars"}],
+    "Dairy": [{name:"Egg",qty:1,unit:""},{name:"Ricotta cheese",qty:15,unit:"oz"},{name:"Mozzarella",qty:16,unit:"oz"},{name:"Parmesan",qty:0.5,unit:"cup"}]
+  },
+  "Mexican Rice": {
+    "Aisle": [{name:"White rice",qty:1.5,unit:"cups"},{name:"Tomato paste",qty:1,unit:"tbsp"},{name:"Tomato sauce",qty:6,unit:"oz"},{name:"Garlic powder",qty:1,unit:"tbsp"},{name:"Onion powder",qty:1.5,unit:"tsp"},{name:"Chicken bouillon",qty:1,unit:"tbsp"}],
+    "Veggies/Meat": [{name:"Yellow onion",qty:0.5,unit:""}],
+    "Costco": [{name:"Avocado oil",qty:1.5,unit:"tbsp"}]
+  },
+  "Pasta": {
+    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:1,unit:""}],
+    "Costco": [{name:"Tomato sauce",qty:4,unit:"cans"}],
+    "Aisle": [{name:"Barilla whole wheat rotini",qty:1,unit:"lb"}]
+  },
+  "Pepperoni Sub": {
+    "Veggies/Meat": [{name:"Turkey pepperoni",qty:1,unit:"pkg"},{name:"Romaine lettuce",qty:1,unit:""}],
+    "Trader Joe's": [{name:"Rao's marinara",qty:1,unit:"jar"}],
+    "Dairy": [{name:"Mozzarella",qty:1,unit:"cup"},{name:"Parmesan",qty:1,unit:"cup"}],
+    "Aisle": [{name:"Sandwich bread",qty:1,unit:"loaf"}]
+  },
+  "Pizza": {
+    "Trader Joe's": [{name:"Pizza crust",qty:1,unit:""}],
+    "Aisle": [{name:"Yeast",qty:1,unit:"pkg"}],
+    "Veggies/Meat": [{name:"Turkey pepperoni",qty:1,unit:"pkg"},{name:"Green pepper",qty:1,unit:""},{name:"Yellow onion",qty:1,unit:""}],
+    "Dairy": [{name:"General cheese",qty:2,unit:"cups"}]
+  },
+  "Protein Smoothie": {
+    "Costco": [{name:"Kirkland chocolate whey",qty:1,unit:"scoop"},{name:"Frozen strawberries",qty:140,unit:"g"}],
+    "Dairy": [{name:"1% milk",qty:240,unit:"ml"}],
+    "Veggies/Meat": [{name:"Banana",qty:1,unit:""}]
+  },
+  "Rice & Meatballs": {
+    "Costco": [{name:"Teriyaki chicken meatballs",qty:1,unit:"bag"}],
+    "Veggies/Meat": [{name:"Fresh broccoli",qty:1,unit:"head"},{name:"Carrots",qty:1,unit:"bag"}],
+    "Aisle": [{name:"White rice",qty:1,unit:"cup"}]
+  },
+  "Sandwich": {
+    "Costco": [{name:"Kirkland Black Forest ham",qty:130,unit:"g"}],
+    "Veggies/Meat": [{name:"French roll",qty:1,unit:""},{name:"Romaine lettuce",qty:1,unit:"cup"},{name:"Tomato",qty:1,unit:""},{name:"Red onion",qty:0.25,unit:""},{name:"Dill pickles",qty:1,unit:"jar"}],
+    "Dairy": [{name:"Lucerne RF colby jack",qty:1,unit:"oz"}]
+  },
+  "Sausage & Peppers": {
+    "Veggies/Meat": [{name:"Chicken sausage",qty:1,unit:"pkg"},{name:"Yellow onion",qty:1,unit:""},{name:"Green pepper",qty:2,unit:""},{name:"Red pepper",qty:2,unit:""}]
+  },
+  "TJ Meatballs": {
+    "Trader Joe's": [{name:"Trader Joe's meatballs",qty:1,unit:"bag"}]
+  }
+};
+
+const ALWAYS_BUY = ["Milk","Eggs","Distilled water","Bananas"];
+const STORE_ORDER = ["Costco","Trader Joe's","Veggies/Meat","Dairy","Aisle"];
+
+let selected = new Set();
+let checked = new Set();
+
+function formatQty(qty, unit) {
+  if (!unit) return qty > 1 ? `x${qty}` : '';
+  const n = qty % 1 === 0 ? qty : parseFloat(qty.toFixed(1));
+  return `${n} ${unit}`;
+}
+
+function buildCombined() {
+  const combined = {};
+  selected.forEach(meal => {
+    Object.entries(RECIPES[meal]).forEach(([store, items]) => {
+      if (!combined[store]) combined[store] = {};
+      items.forEach(item => {
+        if (combined[store][item.name]) {
+          combined[store][item.name].qty += item.qty;
+          combined[store][item.name].meals.add(meal);
+        } else {
+          combined[store][item.name] = { qty: item.qty, unit: item.unit, meals: new Set([meal]) };
+        }
+      });
+    });
+  });
+  return combined;
+}
+
+function renderMeals() {
+  document.getElementById('meal-categories').innerHTML = CATEGORIES.map(cat => `
+    <div class="category-block">
+      <div class="category-label">${cat.label}</div>
+      <div class="meal-grid">
+        ${cat.meals.map(m => {
+          const safe = m.replace(/'/g,"\\'");
+          return `<button class="meal-btn${selected.has(m)?' selected':''}" onclick="toggleMeal('${safe}')">
+            <span class="check"></span>${m}
+          </button>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function toggleMeal(m) { selected.has(m)?selected.delete(m):selected.add(m); renderMeals(); }
+function clearMeals() { selected.clear(); checked.clear(); renderMeals(); }
+
+function copyMeals() {
+  if (!selected.size) { alert('No meals selected!'); return; }
+  const text = "This week I'm eating:\n" + [...selected].map(m=>`- ${m}`).join('\n');
+  function flash() {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied! ✓'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='Copy meals'; btn.classList.remove('copied'); }, 2000);
+  }
+  navigator.clipboard.writeText(text).then(flash).catch(()=>{
+    const ta=document.createElement('textarea'); ta.value=text;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); flash();
+  });
+}
+
+function showTab(t) {
+  document.getElementById('tab-meals').style.display = t==='meals'?'':'none';
+  document.getElementById('tab-list').style.display = t==='list'?'':'none';
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',(i===0)===(t==='meals')));
+  if (t==='list') renderList();
+}
+
+function makeId(str) { return 'r'+str.split('').map(c=>c.charCodeAt(0)).join(''); }
+
+function renderList() {
+  const el = document.getElementById('list-content');
+  const combined = buildCombined();
+  let html = '';
+
+  if (!selected.size) {
+    html = `<p class="empty-state">No meals selected — tap "Select meals" to get started.</p>`;
+  } else {
+    let total = ALWAYS_BUY.filter(i=>!checked.has(i)).length;
+    STORE_ORDER.forEach(s=>{ if(combined[s]) Object.keys(combined[s]).forEach(n=>{ if(!checked.has(n)) total++; }); });
+    html += `<p class="progress">${total} item${total!==1?'s':''} remaining</p>`;
+
+    STORE_ORDER.forEach(store => {
+      if (!combined[store]) return;
+      const unchecked = Object.entries(combined[store]).filter(([n])=>!checked.has(n));
+      if (!unchecked.length) return;
+      html += `<div class="list-section"><div class="store-label">${store}</div>`;
+      unchecked.forEach(([name,{qty,unit,meals}]) => {
+        const id = makeId(name);
+        const safe = name.replace(/'/g,"\\'");
+        const qtyStr = formatQty(qty,unit);
+        const mealList = [...meals].join(', ');
+        html += `<div class="grocery-item" id="row-${id}" onclick="toggleCheck('${safe}',false)">
+          <input type="checkbox" id="${id}" onclick="event.stopPropagation();toggleCheck('${safe}',false)">
+          <span class="item-text">
+            <span class="item-name">${name}</span>
+            ${selected.size>1?`<span class="item-meals">(${mealList})</span>`:''}
+          </span>
+          ${qtyStr?`<span class="qty-badge">${qtyStr}</span>`:''}
+        </div>`;
+      });
+      html += `</div>`;
+    });
+
+    const uncheckedAlways = ALWAYS_BUY.filter(i=>!checked.has(i));
+    if (uncheckedAlways.length) {
+      html += `<div class="list-section"><div class="store-label">Always buy</div>`;
+      uncheckedAlways.forEach(item => {
+        const id = makeId('a'+item);
+        html += `<div class="grocery-item" id="row-${id}" onclick="toggleCheck('${item}',true)">
+          <input type="checkbox" id="${id}" onclick="event.stopPropagation();toggleCheck('${item}',true)">
+          <span class="item-text"><span class="item-name">${item}</span></span>
+          <span class="always-badge">weekly</span>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    if (!total) html += `<p class="empty-state" style="margin-bottom:1rem">🎉 All done!</p>`;
+  }
+
+  html += `<div class="actions">
+    <button class="btn" onclick="checked.clear();renderList()">Restore all</button>
+    <button class="btn" onclick="showTab('meals')">Edit meals</button>
+  </div>`;
+  el.innerHTML = html;
+}
+
+function toggleCheck(item, isAlways) {
+  checked.add(item);
+  const id = isAlways ? makeId('a'+item) : makeId(item);
+  const row = document.getElementById('row-'+id);
+  if (row) { row.style.transition='opacity 0.2s'; row.style.opacity='0'; setTimeout(()=>renderList(),220); }
+  else renderList();
+}
+
+renderMeals();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
