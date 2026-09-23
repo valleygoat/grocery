@@ -280,8 +280,66 @@ function copyMeals() {
 function showTab(t) {
   document.getElementById('tab-meals').style.display = t==='meals'?'':'none';
   document.getElementById('tab-list').style.display = t==='list'?'':'none';
-  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',(i===0)===(t==='meals')));
+  document.getElementById('tab-recipes').style.display = t==='recipes'?'':'none';
+  const order = ['meals','list','recipes'];
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active', order[i]===t));
   if (t==='list') renderList();
+  if (t==='recipes') { activeRecipe = null; renderRecipes(); }
+}
+
+// ---------- Recipes tab ----------
+function getRecipeList() {
+  return Object.keys(RECIPE_INSTRUCTIONS)
+    .filter(m => RECIPE_INSTRUCTIONS[m] && RECIPE_INSTRUCTIONS[m].trim())
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function openRecipe(name) { activeRecipe = name; renderRecipes(); }
+function closeRecipe() { activeRecipe = null; renderRecipes(); }
+
+function renderRecipes() {
+  const el = document.getElementById('recipes-content');
+  if (!activeRecipe) {
+    const list = getRecipeList();
+    if (!list.length) {
+      el.innerHTML = `<p class="empty-state">No recipes added yet.</p>`;
+      return;
+    }
+    el.innerHTML = `<div class="list-section">` + list.map(name => {
+      const safe = name.replace(/'/g,"\\'");
+      return `<div class="recipe-list-item" onclick="openRecipe('${safe}')"><span>${name}</span><span class="chev">&rsaquo;</span></div>`;
+    }).join('') + `</div>`;
+    return;
+  }
+
+  const name = activeRecipe;
+  const recipe = RECIPES[name] || {};
+  const steps = (RECIPE_INSTRUCTIONS[name] || '')
+    .split(/\n\s*\n/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  let html = `<div class="recipe-back" onclick="closeRecipe()">&larr; All recipes</div>`;
+  html += `<div class="recipe-title">${name}</div>`;
+
+  const storesForMeal = Object.keys(recipe);
+  if (storesForMeal.length) {
+    html += `<div class="recipe-section-label">Ingredients</div><div class="list-section">`;
+    storesForMeal.forEach(store => {
+      recipe[store].forEach(item => {
+        const qtyStr = formatQty(item.qty, item.unit);
+        html += `<div class="recipe-ingredient"><span>${item.name}</span>${qtyStr ? `<span class="qty-badge">${qtyStr}</span>` : ''}</div>`;
+      });
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="recipe-section-label">Steps</div>`;
+  html += steps.length
+    ? `<div class="list-section">` + steps.map((s,i) => `<div class="recipe-step"><span class="recipe-step-num">${i+1}.</span>${s}</div>`).join('') + `</div>`
+    : `<p class="empty-state">No steps yet.</p>`;
+
+  el.innerHTML = html;
 }
 
 // key items by store+name so the same ingredient in different stores never collides
