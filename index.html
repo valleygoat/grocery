@@ -42,6 +42,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .sync-dot.err { background: #d9534f; }
 .empty-state { color: #888; font-size: 14px; background: #fff; border-radius: 12px; padding: 1.5rem; text-align: center; }
 .loading { color: #888; font-size: 14px; text-align: center; padding: 2rem; }
+.recipe-list-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 4px; border-bottom: 1px solid #f0f0f0; cursor: pointer; font-size: 15px; }
+.recipe-list-item:last-child { border-bottom: none; }
+.recipe-list-item .chev { color: #ccc; }
+.recipe-back { display: inline-flex; align-items: center; gap: 4px; color: #4a7ddb; font-size: 14px; cursor: pointer; margin-bottom: 12px; }
+.recipe-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+.recipe-section-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 16px 0 8px; }
+.recipe-ingredient { padding: 8px 0; border-bottom: 1px solid #f5f5f5; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+.recipe-ingredient:last-child { border-bottom: none; }
+.recipe-step { padding: 10px 0; border-bottom: 1px solid #f5f5f5; font-size: 14px; line-height: 1.5; white-space: pre-line; }
+.recipe-step:last-child { border-bottom: none; }
+.recipe-step-num { font-weight: 600; color: #4a7ddb; margin-right: 6px; }
 </style>
 </head>
 <body>
@@ -49,6 +60,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="tab-row">
     <div class="tab active" onclick="showTab('meals')">Select meals</div>
     <div class="tab" onclick="showTab('list')">Shopping list</div>
+    <div class="tab" onclick="showTab('recipes')">Recipes</div>
   </div>
   <div id="tab-meals">
     <div id="meal-categories"><p class="loading">Loading…</p></div>
@@ -60,6 +72,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   </div>
   <div id="tab-list" style="display:none">
     <div id="list-content"></div>
+  </div>
+  <div id="tab-recipes" style="display:none">
+    <div id="recipes-content"></div>
   </div>
 </div>
 
@@ -75,12 +90,14 @@ let CATEGORIES = [];      // [{label, meals:[names]}]
 let RECIPES = {};         // {mealName: {storeName: [{name,qty,unit}]}}
 let ALWAYS_BUY = [];      // [names]
 let STORE_ORDER = [];     // [names]
+let RECIPE_INSTRUCTIONS = {}; // {mealName: instructions text or null}
 
 let selected = new Set();      // selected meal names
 let checked = new Set();       // checked item keys ("store::name")
 let syncStatus = 'connecting'; // 'connecting' | 'ok' | 'err'
 let suppressNextSave = false;  // avoid save-loop when applying a remote update
 let saveTimer = null;
+let activeRecipe = null;       // meal name currently open in the Recipes tab, or null for the list view
 
 // ---------- Data loading ----------
 async function loadCatalog() {
@@ -102,11 +119,13 @@ async function loadCatalog() {
   const catById = {};
   catsRes.data.forEach(c => { catById[c.id] = c.label; mealsByCat[c.label] = []; });
   const mealNameById = {};
+  RECIPE_INSTRUCTIONS = {};
   mealsRes.data.forEach(m => {
     mealNameById[m.id] = m.name;
     const label = catById[m.category_id] || 'Other';
     if (!mealsByCat[label]) mealsByCat[label] = [];
     mealsByCat[label].push(m.name);
+    RECIPE_INSTRUCTIONS[m.name] = m.instructions || null;
   });
   CATEGORIES = catsRes.data.map(c => ({ label: c.label, meals: mealsByCat[c.label] || [] }))
     .filter(c => c.meals.length);
