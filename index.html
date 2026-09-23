@@ -36,8 +36,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .item-meals { font-size: 12px; color: #999; display: block; margin-top: 1px; }
 .qty-badge { font-size: 12px; font-weight: 600; color: #fff; background: #4a7ddb; border-radius: 12px; padding: 2px 8px; flex-shrink: 0; min-width: 24px; text-align: center; }
 .always-badge { font-size: 11px; color: #888; background: #f5f5f5; border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
-.progress { font-size: 13px; color: #888; margin-bottom: 0.875rem; }
+.progress { font-size: 13px; color: #888; margin-bottom: 0.875rem; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; margin-right: 5px; vertical-align: middle; }
+.sync-dot.ok { background: #3a9e5f; }
+.sync-dot.err { background: #d9534f; }
 .empty-state { color: #888; font-size: 14px; background: #fff; border-radius: 12px; padding: 1.5rem; text-align: center; }
+.loading { color: #888; font-size: 14px; text-align: center; padding: 2rem; }
 </style>
 </head>
 <body>
@@ -47,7 +51,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div class="tab" onclick="showTab('list')">Shopping list</div>
   </div>
   <div id="tab-meals">
-    <div id="meal-categories"></div>
+    <div id="meal-categories"><p class="loading">Loading…</p></div>
     <div class="actions">
       <button class="btn btn-primary" onclick="showTab('list')">Generate list ↗</button>
       <button class="btn btn-copy" id="copy-btn" onclick="copyMeals()">Copy meals</button>
@@ -59,171 +63,132 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
-const CATEGORIES = [
-  { label: "🥦 Meatless", meals: ["Almond Butter & Jam","Bean & Cheese Burritos","Egg Foo Young","Fried Rice","Protein Smoothie"] },
-  { label: "🍗 Chicken", meals: ["Buffalo Chicken Wraps","Buffalo Meatball Sub","Chicken & Potatoes","Chicken Caesar Wrap","Chicken Nachos","Chicken Quesadillas","Chicken Tacos","Hotdogs","Pepperoni Sub","Rice & Meatballs","Sausage & Peppers","TJ Meatballs"] },
-  { label: "🥩 Beef", meals: ["Baked Ziti","Beef & Broccoli","Beef Tacos","Chili Cheese Fries","Ground Beef Mac & Cheese","Lasagna","Pasta"] },
-  { label: "🗂️ Misc", meals: ["Corn Dogs","Fried Rice + Sausage","Mexican Rice","Pizza","Sandwich"] }
-];
+// ---------- Supabase setup ----------
+const SUPABASE_URL = 'https://enhrjsevztpkrdpojyir.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_2rrym30N_hgx4Gg6dCDYOw_4lWnVIKu';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const RECIPES = {
-  "Almond Butter & Jam": {
-    "Costco": [{name:"Kirkland organic almond butter",qty:32,unit:"g"},{name:"Kirkland organic strawberry spread",qty:54,unit:"g"}],
-    "Aisle": [{name:"Milton's Hearty Whole Grain bread",qty:2,unit:"slices"}]
-  },
-  "Baked Ziti": {
-    "Veggies/Meat": [{name:"96% lean ground beef",qty:1.5,unit:"lb"},{name:"Yellow onion",qty:1,unit:""}],
-    "Aisle": [{name:"Ziti pasta",qty:1,unit:"lb"},{name:"Tomato paste",qty:1,unit:"tbsp"},{name:"Red lentils (dry)",qty:1,unit:"cup"},{name:"Vegetable broth",qty:1,unit:"can"},{name:"Olive oil",qty:1,unit:"tbsp"}],
-    "Trader Joe's": [{name:"Rao's marinara",qty:1,unit:"jar"}],
-    "Dairy": [{name:"Low fat cottage cheese",qty:1,unit:"cup"},{name:"Part skim ricotta",qty:1,unit:"cup"},{name:"Mozzarella",qty:1,unit:"cup"},{name:"Parmesan",qty:1,unit:"cup"}]
-  },
-  "Bean & Cheese Burritos": {
-    "Aisle": [{name:"Fat free refried beans",qty:2,unit:"cans"},{name:"Large flour tortillas",qty:6,unit:""},{name:"Smoked paprika",qty:1,unit:"tsp"}],
-    "Veggies/Meat": [{name:"Yellow onion",qty:0.5,unit:""},{name:"Green pepper",qty:0.5,unit:""},{name:"Garlic",qty:2,unit:"cloves"}],
-    "Dairy": [{name:"Lucerne RF colby jack",qty:2,unit:"cups"}],
-    "Costco": [{name:"Olive oil",qty:2,unit:"tbsp"}]
-  },
-  "Beef & Broccoli": {
-    "Veggies/Meat": [{name:"Flank steak",qty:1,unit:"lb"},{name:"Fresh broccoli",qty:4,unit:"cups"},{name:"Fresh ginger",qty:1,unit:"tsp"},{name:"Garlic",qty:3,unit:"cloves"}],
-    "Aisle": [{name:"Low-sodium soy sauce",qty:0.33,unit:"cup"},{name:"Brown sugar",qty:3,unit:"tbsp"},{name:"Cornstarch",qty:1.5,unit:"tbsp"},{name:"Sesame oil",qty:1,unit:"tbsp"},{name:"White rice",qty:1,unit:""}],
-    "Costco": [{name:"Avocado oil",qty:2,unit:"tbsp"}]
-  },
-  "Beef Tacos": {
-    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:1,unit:""},{name:"Romaine lettuce",qty:1,unit:"cup"}],
-    "Aisle": [{name:"Taco shells",qty:1,unit:"box"}],
-    "Dairy": [{name:"General cheese",qty:1,unit:"cup"}]
-  },
-  "Buffalo Chicken Wraps": {
-    "Costco": [{name:"Kirkland lightly breaded chicken chunks",qty:1,unit:"bag"}],
-    "Aisle": [{name:"Mission Carb Balance large flour tortillas",qty:1,unit:"pkg"},{name:"Sweet Baby Ray's buffalo sauce",qty:1,unit:"bottle"},{name:"Ken's Steakhouse Lite Ranch",qty:1,unit:"bottle"}],
-    "Veggies/Meat": [{name:"Romaine lettuce",qty:1,unit:"head"},{name:"Tomato",qty:1,unit:""},{name:"Red onion",qty:1,unit:""}],
-    "Dairy": [{name:"Mozzarella",qty:1,unit:"cup"}]
-  },
-  "Buffalo Meatball Sub": {
-    "Trader Joe's": [{name:"Trader Joe's meatballs",qty:1,unit:"bag"}],
-    "Aisle": [{name:"Sweet Baby Ray's buffalo sauce",qty:1,unit:"bottle"},{name:"Sandwich bread",qty:1,unit:"loaf"}],
-    "Dairy": [{name:"General cheese",qty:1,unit:"cup"}]
-  },
-  "Chicken & Potatoes": {
-    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
-    "Veggies/Meat": [{name:"Russet potatoes",qty:3,unit:""},{name:"Fresh broccoli",qty:1,unit:"head"},{name:"Carrots",qty:1,unit:"bag"}]
-  },
-  "Chicken Caesar Wrap": {
-    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
-    "Veggies/Meat": [{name:"Romaine lettuce",qty:1,unit:"head"},{name:"Tomato",qty:1,unit:""}],
-    "Aisle": [{name:"Caesar dressing",qty:1,unit:"bottle"},{name:"Croutons",qty:1,unit:"bag"},{name:"Large flour tortillas",qty:1,unit:"pkg"}]
-  },
-  "Chicken Nachos": {
-    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
-    "Aisle": [{name:"Corn tortillas",qty:1,unit:"pkg"},{name:"Canned beans",qty:1,unit:"can"}],
-    "Veggies/Meat": [{name:"Tomato",qty:2,unit:""},{name:"Yellow onion",qty:1,unit:""}],
-    "Dairy": [{name:"General cheese",qty:2,unit:"cups"}]
-  },
-  "Chicken Quesadillas": {
-    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
-    "Veggies/Meat": [{name:"Red pepper",qty:1,unit:""},{name:"Green pepper",qty:1,unit:""}],
-    "Aisle": [{name:"Large flour tortillas",qty:1,unit:"pkg"}],
-    "Dairy": [{name:"Lucerne RF colby jack",qty:1,unit:"cup"}]
-  },
-  "Chicken Tacos": {
-    "Trader Joe's": [{name:"Chicken breast",qty:1,unit:"lb"}],
-    "Aisle": [{name:"Taco shells",qty:1,unit:"box"}],
-    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""},{name:"Romaine lettuce",qty:1,unit:"head"}],
-    "Dairy": [{name:"General cheese",qty:1,unit:"cup"}]
-  },
-  "Chili Cheese Fries": {
-    "Veggies/Meat": [{name:"96% lean ground beef",qty:2,unit:"lb"},{name:"Russet potatoes",qty:3,unit:""},{name:"Yellow onion",qty:1,unit:""}],
-    "Aisle": [{name:"Chili packet",qty:1,unit:"pkg"},{name:"Tomato sauce",qty:1,unit:"can"}],
-    "Dairy": [{name:"General cheese",qty:2,unit:"cups"}]
-  },
-  "Corn Dogs": {
-    "Costco": [{name:"Foster Farms Jumbo corn dogs",qty:1,unit:"box"}]
-  },
-  "Egg Foo Young": {
-    "Costco": [{name:"Kirkland egg whites",qty:16,unit:"oz"},{name:"Frozen broccoli",qty:0.5,unit:"lb"}],
-    "Dairy": [{name:"Eggs",qty:7,unit:""}],
-    "Aisle": [{name:"Sesame oil",qty:34,unit:"g"}],
-    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""},{name:"Green pepper",qty:1,unit:""},{name:"Red pepper",qty:1,unit:""}]
-  },
-  "Fried Rice": {
-    "Aisle": [{name:"White rice",qty:1,unit:"cup dry"},{name:"Low-sodium soy sauce",qty:3,unit:"tbsp"},{name:"Sesame oil",qty:1,unit:"tbsp"}],
-    "Costco": [{name:"Frozen mixed vegetables",qty:2,unit:"cups"},{name:"Kirkland egg whites",qty:1,unit:"cup"},{name:"Avocado oil",qty:3,unit:"tbsp"}],
-    "Dairy": [{name:"Eggs",qty:3,unit:""}],
-    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""}]
-  },
-  "Fried Rice + Sausage": {
-    "Aisle": [{name:"White rice",qty:1,unit:"cup dry"},{name:"Low-sodium soy sauce",qty:3,unit:"tbsp"},{name:"Sesame oil",qty:1,unit:"tbsp"}],
-    "Costco": [{name:"Frozen mixed vegetables",qty:2,unit:"cups"},{name:"Kirkland egg whites",qty:1,unit:"cup"},{name:"Avocado oil",qty:3,unit:"tbsp"},{name:"Kam Yen Jan Chinese sausage",qty:5,unit:"links"}],
-    "Dairy": [{name:"Eggs",qty:3,unit:""}],
-    "Veggies/Meat": [{name:"Yellow onion",qty:1,unit:""}]
-  },
-  "Ground Beef Mac & Cheese": {
-    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:1,unit:""},{name:"Tomato",qty:1,unit:""}],
-    "Aisle": [{name:"Barilla whole wheat rotini",qty:1,unit:"lb"},{name:"Tomato paste",qty:1,unit:"tbsp"}],
-    "Dairy": [{name:"Low fat cottage cheese",qty:1,unit:"cup"},{name:"Lucerne RF colby jack",qty:1,unit:"cup"},{name:"1% milk",qty:0.5,unit:"cup"}]
-  },
-  "Hotdogs": {
-    "Veggies/Meat": [{name:"Chicken sausage",qty:1,unit:"pkg"}],
-    "Aisle": [{name:"Hotdog buns",qty:1,unit:"pkg"}]
-  },
-  "Lasagna": {
-    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:0.75,unit:"cup"},{name:"Garlic",qty:3,unit:"cloves"},{name:"Fresh parsley",qty:0.25,unit:"cup"}],
-    "Aisle": [{name:"Lasagna noodles",qty:9,unit:""},{name:"Olive oil",qty:1,unit:"tbsp"},{name:"Italian seasoning",qty:1,unit:"tsp"}],
-    "Trader Joe's": [{name:"Rao's marinara",qty:1.5,unit:"jars"}],
-    "Dairy": [{name:"Egg",qty:1,unit:""},{name:"Ricotta cheese",qty:15,unit:"oz"},{name:"Mozzarella",qty:16,unit:"oz"},{name:"Parmesan",qty:0.5,unit:"cup"}]
-  },
-  "Mexican Rice": {
-    "Aisle": [{name:"White rice",qty:1.5,unit:"cups"},{name:"Tomato paste",qty:1,unit:"tbsp"},{name:"Tomato sauce",qty:6,unit:"oz"},{name:"Garlic powder",qty:1,unit:"tbsp"},{name:"Onion powder",qty:1.5,unit:"tsp"},{name:"Chicken bouillon",qty:1,unit:"tbsp"}],
-    "Veggies/Meat": [{name:"Yellow onion",qty:0.5,unit:""}],
-    "Costco": [{name:"Avocado oil",qty:1.5,unit:"tbsp"}]
-  },
-  "Pasta": {
-    "Veggies/Meat": [{name:"96% lean ground beef",qty:1,unit:"lb"},{name:"Yellow onion",qty:1,unit:""}],
-    "Costco": [{name:"Tomato sauce",qty:4,unit:"cans"}],
-    "Aisle": [{name:"Barilla whole wheat rotini",qty:1,unit:"lb"}]
-  },
-  "Pepperoni Sub": {
-    "Veggies/Meat": [{name:"Turkey pepperoni",qty:1,unit:"pkg"},{name:"Romaine lettuce",qty:1,unit:""}],
-    "Trader Joe's": [{name:"Rao's marinara",qty:1,unit:"jar"}],
-    "Dairy": [{name:"Mozzarella",qty:1,unit:"cup"},{name:"Parmesan",qty:1,unit:"cup"}],
-    "Aisle": [{name:"Sandwich bread",qty:1,unit:"loaf"}]
-  },
-  "Pizza": {
-    "Trader Joe's": [{name:"Pizza crust",qty:1,unit:""}],
-    "Aisle": [{name:"Yeast",qty:1,unit:"pkg"}],
-    "Veggies/Meat": [{name:"Turkey pepperoni",qty:1,unit:"pkg"},{name:"Green pepper",qty:1,unit:""},{name:"Yellow onion",qty:1,unit:""}],
-    "Dairy": [{name:"General cheese",qty:2,unit:"cups"}]
-  },
-  "Protein Smoothie": {
-    "Costco": [{name:"Kirkland chocolate whey",qty:1,unit:"scoop"},{name:"Frozen strawberries",qty:140,unit:"g"}],
-    "Dairy": [{name:"1% milk",qty:240,unit:"ml"}],
-    "Veggies/Meat": [{name:"Banana",qty:1,unit:""}]
-  },
-  "Rice & Meatballs": {
-    "Costco": [{name:"Teriyaki chicken meatballs",qty:1,unit:"bag"}],
-    "Veggies/Meat": [{name:"Fresh broccoli",qty:1,unit:"head"},{name:"Carrots",qty:1,unit:"bag"}],
-    "Aisle": [{name:"White rice",qty:1,unit:"cup"}]
-  },
-  "Sandwich": {
-    "Costco": [{name:"Kirkland Black Forest ham",qty:130,unit:"g"}],
-    "Veggies/Meat": [{name:"French roll",qty:1,unit:""},{name:"Romaine lettuce",qty:1,unit:"cup"},{name:"Tomato",qty:1,unit:""},{name:"Red onion",qty:0.25,unit:""},{name:"Dill pickles",qty:1,unit:"jar"}],
-    "Dairy": [{name:"Lucerne RF colby jack",qty:1,unit:"oz"}]
-  },
-  "Sausage & Peppers": {
-    "Veggies/Meat": [{name:"Chicken sausage",qty:1,unit:"pkg"},{name:"Yellow onion",qty:1,unit:""},{name:"Green pepper",qty:2,unit:""},{name:"Red pepper",qty:2,unit:""}]
-  },
-  "TJ Meatballs": {
-    "Trader Joe's": [{name:"Trader Joe's meatballs",qty:1,unit:"bag"}]
+// ---------- In-memory state (hydrated from Supabase) ----------
+let CATEGORIES = [];      // [{label, meals:[names]}]
+let RECIPES = {};         // {mealName: {storeName: [{name,qty,unit}]}}
+let ALWAYS_BUY = [];      // [names]
+let STORE_ORDER = [];     // [names]
+
+let selected = new Set();      // selected meal names
+let checked = new Set();       // checked item keys ("store::name")
+let syncStatus = 'connecting'; // 'connecting' | 'ok' | 'err'
+let suppressNextSave = false;  // avoid save-loop when applying a remote update
+let saveTimer = null;
+
+// ---------- Data loading ----------
+async function loadCatalog() {
+  const [storesRes, catsRes, mealsRes, itemsRes, alwaysRes] = await Promise.all([
+    sb.from('stores').select('*').order('sort_order'),
+    sb.from('categories').select('*').order('sort_order'),
+    sb.from('meals').select('*').order('sort_order'),
+    sb.from('recipe_items').select('*'),
+    sb.from('always_buy_items').select('*').order('sort_order'),
+  ]);
+  for (const r of [storesRes, catsRes, mealsRes, itemsRes, alwaysRes]) {
+    if (r.error) throw r.error;
   }
-};
 
-const ALWAYS_BUY = ["Milk","Eggs","Distilled water","Bananas"];
-const STORE_ORDER = ["Costco","Trader Joe's","Veggies/Meat","Dairy","Aisle"];
+  STORE_ORDER = storesRes.data.map(s => s.name);
+  ALWAYS_BUY = alwaysRes.data.map(a => a.name);
 
-let selected = new Set();
-let checked = new Set();
+  const mealsByCat = {};
+  const catById = {};
+  catsRes.data.forEach(c => { catById[c.id] = c.label; mealsByCat[c.label] = []; });
+  const mealNameById = {};
+  mealsRes.data.forEach(m => {
+    mealNameById[m.id] = m.name;
+    const label = catById[m.category_id] || 'Other';
+    if (!mealsByCat[label]) mealsByCat[label] = [];
+    mealsByCat[label].push(m.name);
+  });
+  CATEGORIES = catsRes.data.map(c => ({ label: c.label, meals: mealsByCat[c.label] || [] }))
+    .filter(c => c.meals.length);
 
+  const storeNameById = {};
+  storesRes.data.forEach(s => { storeNameById[s.id] = s.name; });
+
+  RECIPES = {};
+  itemsRes.data.forEach(it => {
+    const mealName = mealNameById[it.meal_id];
+    const storeName = storeNameById[it.store_id];
+    if (!mealName || !storeName) return;
+    if (!RECIPES[mealName]) RECIPES[mealName] = {};
+    if (!RECIPES[mealName][storeName]) RECIPES[mealName][storeName] = [];
+    RECIPES[mealName][storeName].push({ name: it.name, qty: Number(it.qty), unit: it.unit || '' });
+  });
+}
+
+async function loadState() {
+  const { data, error } = await sb.from('list_state').select('*').eq('id', 'main').single();
+  if (error) throw error;
+  selected = new Set((data.selected_meal_ids || []).map(id => mealNameById_global[id]).filter(Boolean));
+  checked = new Set(data.checked_keys || []);
+}
+
+// meal name <-> id maps, needed to store selection as ids (stable even if renamed)
+let mealIdByName_global = {};
+let mealNameById_global = {};
+
+async function buildMealIdMaps() {
+  const { data, error } = await sb.from('meals').select('id,name');
+  if (error) throw error;
+  mealIdByName_global = {}; mealNameById_global = {};
+  data.forEach(m => { mealIdByName_global[m.name] = m.id; mealNameById_global[m.id] = m.name; });
+}
+
+// ---------- Persisting state to Supabase ----------
+function scheduleSave() {
+  if (suppressNextSave) { suppressNextSave = false; return; }
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 400); // debounce rapid taps
+}
+
+async function saveState() {
+  const selected_meal_ids = [...selected].map(n => mealIdByName_global[n]).filter(id => id !== undefined);
+  const checked_keys = [...checked];
+  try {
+    const { error } = await sb.from('list_state')
+      .update({ selected_meal_ids, checked_keys, updated_at: new Date().toISOString() })
+      .eq('id', 'main');
+    if (error) throw error;
+    setSyncStatus('ok');
+  } catch (e) {
+    console.error('save failed', e);
+    setSyncStatus('err');
+  }
+}
+
+function setSyncStatus(s) {
+  syncStatus = s;
+  const dot = document.getElementById('sync-dot');
+  if (dot) dot.className = 'sync-dot ' + (s === 'ok' ? 'ok' : s === 'err' ? 'err' : '');
+}
+
+// ---------- Realtime: pick up changes made on the other device ----------
+function subscribeRealtime() {
+  sb.channel('list_state-changes')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'list_state', filter: 'id=eq.main' },
+      payload => {
+        const row = payload.new;
+        suppressNextSave = true; // this change came from the server, don't echo it back
+        selected = new Set((row.selected_meal_ids || []).map(id => mealNameById_global[id]).filter(Boolean));
+        checked = new Set(row.checked_keys || []);
+        renderMeals();
+        const listVisible = document.getElementById('tab-list').style.display !== 'none';
+        if (listVisible) renderList();
+        setSyncStatus('ok');
+      })
+    .subscribe();
+}
+
+// ---------- Formatting / combining (unchanged logic) ----------
 function formatQty(qty, unit) {
   if (!unit) return qty > 1 ? `x${qty}` : '';
   const n = qty % 1 === 0 ? qty : parseFloat(qty.toFixed(1));
@@ -233,7 +198,9 @@ function formatQty(qty, unit) {
 function buildCombined() {
   const combined = {};
   selected.forEach(meal => {
-    Object.entries(RECIPES[meal]).forEach(([store, items]) => {
+    const recipe = RECIPES[meal];
+    if (!recipe) return;
+    Object.entries(recipe).forEach(([store, items]) => {
       if (!combined[store]) combined[store] = {};
       items.forEach(item => {
         if (combined[store][item.name]) {
@@ -248,6 +215,7 @@ function buildCombined() {
   return combined;
 }
 
+// ---------- Rendering ----------
 function renderMeals() {
   document.getElementById('meal-categories').innerHTML = CATEGORIES.map(cat => `
     <div class="category-block">
@@ -263,8 +231,17 @@ function renderMeals() {
     </div>`).join('');
 }
 
-function toggleMeal(m) { selected.has(m)?selected.delete(m):selected.add(m); renderMeals(); }
-function clearMeals() { selected.clear(); checked.clear(); renderMeals(); }
+function toggleMeal(m) {
+  selected.has(m) ? selected.delete(m) : selected.add(m);
+  renderMeals();
+  scheduleSave();
+}
+
+function clearMeals() {
+  selected.clear(); checked.clear();
+  renderMeals();
+  scheduleSave();
+}
 
 function copyMeals() {
   if (!selected.size) { alert('No meals selected!'); return; }
@@ -288,32 +265,38 @@ function showTab(t) {
   if (t==='list') renderList();
 }
 
-function makeId(str) { return 'r'+str.split('').map(c=>c.charCodeAt(0)).join(''); }
+// key items by store+name so the same ingredient in different stores never collides
+function itemKey(store, name) { return store + '::' + name; }
 
 function renderList() {
   const el = document.getElementById('list-content');
   const combined = buildCombined();
   let html = '';
 
+  const dotClass = syncStatus === 'ok' ? 'ok' : syncStatus === 'err' ? 'err' : '';
+  const syncLabel = syncStatus === 'ok' ? 'Synced' : syncStatus === 'err' ? 'Sync error' : 'Syncing…';
+
   if (!selected.size) {
-    html = `<p class="empty-state">No meals selected — tap "Select meals" to get started.</p>`;
+    html = `<p class="progress"><span><span class="sync-dot ${dotClass}" id="sync-dot"></span>${syncLabel}</span></p>`;
+    html += `<p class="empty-state">No meals selected — tap "Select meals" to get started.</p>`;
   } else {
-    let total = ALWAYS_BUY.filter(i=>!checked.has(i)).length;
-    STORE_ORDER.forEach(s=>{ if(combined[s]) Object.keys(combined[s]).forEach(n=>{ if(!checked.has(n)) total++; }); });
-    html += `<p class="progress">${total} item${total!==1?'s':''} remaining</p>`;
+    let total = ALWAYS_BUY.filter(i=>!checked.has(itemKey('always', i))).length;
+    STORE_ORDER.forEach(s=>{ if(combined[s]) Object.keys(combined[s]).forEach(n=>{ if(!checked.has(itemKey(s,n))) total++; }); });
+    html += `<p class="progress"><span><span class="sync-dot ${dotClass}" id="sync-dot"></span>${syncLabel}</span><span>${total} item${total!==1?'s':''} remaining</span></p>`;
 
     STORE_ORDER.forEach(store => {
       if (!combined[store]) return;
-      const unchecked = Object.entries(combined[store]).filter(([n])=>!checked.has(n));
+      const unchecked = Object.entries(combined[store]).filter(([n])=>!checked.has(itemKey(store,n)));
       if (!unchecked.length) return;
       html += `<div class="list-section"><div class="store-label">${store}</div>`;
       unchecked.forEach(([name,{qty,unit,meals}]) => {
-        const id = makeId(name);
-        const safe = name.replace(/'/g,"\\'");
+        const key = itemKey(store, name);
+        const domId = 'r' + btoa(unescape(encodeURIComponent(key))).replace(/[^a-zA-Z0-9]/g,'');
+        const safeKey = key.replace(/'/g,"\\'");
         const qtyStr = formatQty(qty,unit);
         const mealList = [...meals].join(', ');
-        html += `<div class="grocery-item" id="row-${id}" onclick="toggleCheck('${safe}',false)">
-          <input type="checkbox" id="${id}" onclick="event.stopPropagation();toggleCheck('${safe}',false)">
+        html += `<div class="grocery-item" id="row-${domId}" onclick="toggleCheck('${safeKey}','${domId}')">
+          <input type="checkbox" id="${domId}" onclick="event.stopPropagation();toggleCheck('${safeKey}','${domId}')">
           <span class="item-text">
             <span class="item-name">${name}</span>
             ${selected.size>1?`<span class="item-meals">(${mealList})</span>`:''}
@@ -324,13 +307,14 @@ function renderList() {
       html += `</div>`;
     });
 
-    const uncheckedAlways = ALWAYS_BUY.filter(i=>!checked.has(i));
+    const uncheckedAlways = ALWAYS_BUY.filter(i=>!checked.has(itemKey('always', i)));
     if (uncheckedAlways.length) {
       html += `<div class="list-section"><div class="store-label">Always buy</div>`;
       uncheckedAlways.forEach(item => {
-        const id = makeId('a'+item);
-        html += `<div class="grocery-item" id="row-${id}" onclick="toggleCheck('${item}',true)">
-          <input type="checkbox" id="${id}" onclick="event.stopPropagation();toggleCheck('${item}',true)">
+        const key = itemKey('always', item);
+        const domId = 'r' + btoa(unescape(encodeURIComponent(key))).replace(/[^a-zA-Z0-9]/g,'');
+        html += `<div class="grocery-item" id="row-${domId}" onclick="toggleCheck('${key}','${domId}')">
+          <input type="checkbox" id="${domId}" onclick="event.stopPropagation();toggleCheck('${key}','${domId}')">
           <span class="item-text"><span class="item-name">${item}</span></span>
           <span class="always-badge">weekly</span>
         </div>`;
@@ -342,21 +326,43 @@ function renderList() {
   }
 
   html += `<div class="actions">
-    <button class="btn" onclick="checked.clear();renderList()">Restore all</button>
+    <button class="btn" onclick="restoreAll()">Restore all</button>
     <button class="btn" onclick="showTab('meals')">Edit meals</button>
   </div>`;
   el.innerHTML = html;
 }
 
-function toggleCheck(item, isAlways) {
-  checked.add(item);
-  const id = isAlways ? makeId('a'+item) : makeId(item);
-  const row = document.getElementById('row-'+id);
-  if (row) { row.style.transition='opacity 0.2s'; row.style.opacity='0'; setTimeout(()=>renderList(),220); }
-  else renderList();
+function restoreAll() {
+  checked.clear();
+  renderList();
+  scheduleSave();
 }
 
-renderMeals();
+function toggleCheck(key, domId) {
+  checked.add(key);
+  const row = document.getElementById('row-'+domId);
+  if (row) { row.style.transition='opacity 0.2s'; row.style.opacity='0'; setTimeout(()=>renderList(),220); }
+  else renderList();
+  scheduleSave();
+}
+
+// ---------- Boot ----------
+async function boot() {
+  try {
+    await buildMealIdMaps();
+    await loadCatalog();
+    await loadState();
+    setSyncStatus('ok');
+    renderMeals();
+    subscribeRealtime();
+  } catch (e) {
+    console.error('boot failed', e);
+    document.getElementById('meal-categories').innerHTML =
+      '<p class="empty-state">Could not load your data. Check your connection and reload.</p>';
+    setSyncStatus('err');
+  }
+}
+boot();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
